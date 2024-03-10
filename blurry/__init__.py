@@ -207,12 +207,7 @@ async def build(release=True):
             file_data_by_directory[directory] = []
 
         # Convert Markdown file to HTML
-        body, front_matter = convert_markdown_file_to_html(filepath)
-        file_data = MarkdownFileData(
-            body=body,
-            front_matter=front_matter,
-            path=relative_filepath,
-        )
+        file_data = convert_markdown_file_to_html(filepath, relative_filepath)
         file_data_by_directory[directory].append(file_data)
 
     non_markdown_tasks.append(write_sitemap_file(file_data_by_directory))

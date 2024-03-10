@@ -26,6 +26,7 @@ from blurry.plugins import discovered_markdown_plugins
 from blurry.settings import get_content_directory
 from blurry.settings import SETTINGS
 from blurry.types import is_str
+from blurry.types import MarkdownFileData
 from blurry.utils import content_path_to_url
 from blurry.utils import convert_relative_path_in_markdown_file_to_pathname
 from blurry.utils import path_to_url_pathname
@@ -150,7 +151,9 @@ markdown = mistune.Markdown(
 )
 
 
-def convert_markdown_file_to_html(filepath: Path) -> tuple[str, dict[str, Any]]:
+def convert_markdown_file_to_html(
+    filepath: Path, relative_filepath: Path
+) -> MarkdownFileData:
     CONTENT_DIR = get_content_directory()
     if not markdown.renderer:
         raise Exception("Blurry markdown renderer not set on Mistune Markdown instance")
@@ -186,7 +189,12 @@ def convert_markdown_file_to_html(filepath: Path) -> tuple[str, dict[str, Any]]:
         image_path = resolve_relative_path_in_markdown(relative_image_path, filepath)
         front_matter["image"] = update_image_with_url(image_copy, image_path)
         front_matter["thumbnailUrl"] = image_path_to_thumbnailUrl(image_path)
-    return html, front_matter
+    file_data = MarkdownFileData(
+        body=html,
+        front_matter=front_matter,
+        path=relative_filepath,
+    )
+    return file_data
 
 
 def image_path_to_thumbnailUrl(image_path: Path):
