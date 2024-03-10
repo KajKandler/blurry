@@ -46,6 +46,7 @@ Ready to contribute? Here's how to set up `blurry` for local development.
 1. Clone your fork locally
 1. Install your local copy into a virtualenv
 1. Install [pre-commit](https://pre-commit.com/) to run code checks & formatting on your commits
+1. Run `pip install -e .` to install dependencies
 1. Create a branch for local development
     ```shell
     $ git checkout -b name-of-your-bugfix-or-feature
