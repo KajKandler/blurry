@@ -8,6 +8,7 @@ from typing import TypeGuard
 @dataclass
 class MarkdownFileData:
     body: str
+    top_level_type: str | None
     front_matter: dict[str, Any]
     path: Path
 

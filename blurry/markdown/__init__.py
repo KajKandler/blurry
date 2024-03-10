@@ -1,3 +1,4 @@
+import json
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from mistune.plugins.table import table
 from mistune.plugins.task_lists import task_lists
 from mistune.plugins.url import url
 from mistune.util import escape
+from pyld import jsonld
 from wand.image import Image
 
 from .front_matter import parse_front_matter
@@ -150,11 +152,124 @@ markdown = mistune.Markdown(
     + [plugin.load() for plugin in discovered_markdown_plugins],
 )
 
+SCHEMA_ORG = json.loads('{ "@vocab": "https://schema.org/" }')
+
+
+def jsonld_document_loader(secure=False, fragments=[], **kwargs):
+    """
+    Create a Requests document loader.
+
+    Can be used to setup extra Requests args such as verify, cert, timeout,
+    or others.
+
+    :param secure: require all requests to use HTTPS (default: False).
+    :param fragments: the fragments of schema loaded as dicts
+    :param **kwargs: extra keyword args for Requests get() call.
+
+    :return: the RemoteDocument loader function.
+    """
+
+    def loader(ignored, options={}):
+        """
+        Retrieves JSON-LD from the dicts provided as fragments.
+
+        :param ignored: this positional paramter is ignored, because the tomls fragments are side loaded
+
+        :return: the RemoteDocument.
+        """
+        fragments_str = []
+        for fragment in fragments:
+            if not fragment.get("@context"):
+                fragment["@context"] = SCHEMA_ORG
+            fragments_str.append(json.dumps(fragment))
+            # print("==========================")
+            # print(json.dumps(fragment, indent=2))
+
+        result = "[" + ",".join(fragments_str) + "]"
+        # print(">>>>>>>>> ",result)
+
+        doc = {
+            "contentType": "application/ld+json",
+            "contextUrl": None,
+            "documentUrl": None,
+            "document": result,
+        }
+        return doc
+
+    return loader
+
+
+def add_inferred_schema(
+    local_front_matter: dict, filepath: Path, relative_filepath: Path
+) -> dict:
+    # CONTENT_DIR = get_content_directory()
+
+    # Add inferred/computed/relative values
+    local_front_matter.update({"url": content_path_to_url(relative_filepath)})
+
+    # Add inferred/computed/relative values
+    # https://schema.org/image
+    # https://schema.org/thumbnailUrl
+    if image := local_front_matter.get("image"):
+        image_copy = deepcopy(image)
+        relative_image_path = get_relative_image_path_from_image_property(image_copy)
+        image_path = resolve_relative_path_in_markdown(relative_image_path, filepath)
+        local_front_matter["image"] = update_image_with_url(image_copy, image_path)
+        local_front_matter["thumbnailUrl"] = image_path_to_thumbnailUrl(image_path)
+
+    return local_front_matter
+
+
+def resolve_front_matter(
+    state: BlockState, filepath: Path, relative_filepath: Path
+) -> tuple[dict[str, Any], str | None]:
+    top_level_type = None
+
+    if SETTINGS.get("FRONT_MATTER_RESOLUTION") == "merge":
+        try:
+            global_schema: dict[str, Any] = dict(SETTINGS.get("SCHEMA_DATA", {}))
+            if not global_schema.get("@context"):
+                global_schema["@context"] = SCHEMA_ORG
+            if graph := global_schema.pop("@graph", None):
+                # global_schema.remove("@graph")
+                global_graph = {"@context": SCHEMA_ORG, "graph": graph}
+            else:
+                global_graph = {}
+
+            local_schema = state.env.get("front_matter", {})
+            top_level_type = local_schema.get("@type", None)
+            if not local_schema.get("@context"):
+                local_schema["@context"] = SCHEMA_ORG
+            if graph := local_schema.pop("@graph", None):
+                # local_schema.remove("@graph")
+                local_graph = {"@context": SCHEMA_ORG, "graph": graph}
+            else:
+                local_graph = {}
+
+            local_schema = add_inferred_schema(
+                local_schema, filepath, relative_filepath
+            )
+            jsonld.set_document_loader(
+                jsonld_document_loader(
+                    fragments=[global_schema, global_graph, local_schema, local_graph]
+                )
+            )
+            front_matter: dict[str, Any] = jsonld.compact("ignore", SCHEMA_ORG)
+        except Exception as e:
+            print("merging front matter failed:", e)
+            raise e
+    else:
+        # Seed front_matter with schema_data from config file
+        front_matter: dict[str, Any] = dict(SETTINGS.get("SCHEMA_DATA", {}))
+        front_matter.update(state.env.get("front_matter", {}))
+        front_matter = add_inferred_schema(front_matter, filepath, relative_filepath)
+    return front_matter, top_level_type
+
 
 def convert_markdown_file_to_html(
     filepath: Path, relative_filepath: Path
 ) -> MarkdownFileData:
-    CONTENT_DIR = get_content_directory()
+    # CONTENT_DIR = get_content_directory()
     if not markdown.renderer:
         raise Exception("Blurry markdown renderer not set on Mistune Markdown instance")
 
@@ -175,22 +290,13 @@ def convert_markdown_file_to_html(
     # Post-process HTML
     html = remove_lazy_loading_from_first_image(html)
 
-    # Seed front_matter with schema_data from config file
-    front_matter: dict[str, Any] = dict(SETTINGS.get("SCHEMA_DATA", {}))
-    front_matter.update(state.env.get("front_matter", {}))
+    front_matter, top_level_type = resolve_front_matter(
+        state, filepath, relative_filepath
+    )
 
-    # Add inferred/computed/relative values
-    # https://schema.org/image
-    # https://schema.org/thumbnailUrl
-    front_matter.update({"url": content_path_to_url(filepath.relative_to(CONTENT_DIR))})
-    if image := front_matter.get("image"):
-        image_copy = deepcopy(image)
-        relative_image_path = get_relative_image_path_from_image_property(image_copy)
-        image_path = resolve_relative_path_in_markdown(relative_image_path, filepath)
-        front_matter["image"] = update_image_with_url(image_copy, image_path)
-        front_matter["thumbnailUrl"] = image_path_to_thumbnailUrl(image_path)
     file_data = MarkdownFileData(
         body=html,
+        top_level_type=top_level_type,
         front_matter=front_matter,
         path=relative_filepath,
     )
