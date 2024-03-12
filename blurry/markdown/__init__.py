@@ -179,14 +179,14 @@ def jsonld_document_loader(secure=False, fragments=[], **kwargs):
         """
         fragments_str = []
         for fragment in fragments:
-            if not fragment.get("@context"):
-                fragment["@context"] = SCHEMA_ORG
+            # if not fragment.get("@context"):
+            #     fragment["@context"] = SCHEMA_ORG
             fragments_str.append(json.dumps(fragment))
             # print("==========================")
             # print(json.dumps(fragment, indent=2))
 
         result = "[" + ",".join(fragments_str) + "]"
-        # print(">>>>>>>>> ",result)
+        print(">>>>>>>>> ", result)
 
         doc = {
             "contentType": "application/ld+json",
@@ -220,41 +220,68 @@ def add_inferred_schema(
     return local_front_matter
 
 
+def merge_schema(
+    global_schema: dict[str, Any], local_schema: dict[str, Any]
+) -> dict[str, Any]:
+    # if not global_schema.get("@context"):
+    #     global_schema["@context"] = SCHEMA_ORG
+    if graph := global_schema.pop("@graph", None):
+        print(">>- global schema:")
+        print(json.dumps(global_schema, indent=2))
+        print(">>+ global graph:")
+        print(json.dumps(graph, indent=2))
+        graph.append(deepcopy(global_schema))
+        # global_graph = {"@context": SCHEMA_ORG, "@graph": graph}
+        global_graph = {"@graph": graph}
+    else:
+        # global_graph = [{"@context": SCHEMA_ORG}, deepcopy(global_schema)]
+        global_graph = [deepcopy(global_schema)]
+    print(">>. global schema:")
+    print(json.dumps(global_schema, indent=2))
+    print(">>. global graph:")
+    print(json.dumps(global_graph, indent=2))
+
+    # if not local_schema.get("@context"):
+    #     local_schema["@context"] = SCHEMA_ORG
+    if graph := local_schema.pop("@graph", None):
+        # local_graph = {"@context": SCHEMA_ORG, "@graph": graph}
+        # graph.append(deepcopy(local_schema))
+        local_graph = {"@graph": graph}
+    else:
+        local_graph = [deepcopy(global_schema)]
+    print(">>. local schema:")
+    print(json.dumps(local_schema, indent=2))
+    print(">>. local graph:")
+    print(json.dumps(local_graph, indent=2))
+
+    jsonld.set_document_loader(
+        jsonld_document_loader(fragments=[global_graph, local_schema, local_graph])
+    )
+    front_matter: dict[str, Any] = jsonld.compact("ignore", SCHEMA_ORG)
+    print(">>. front matter:")
+    print(json.dumps(front_matter, indent=2))
+    return front_matter
+
+
 def resolve_front_matter(
     state: BlockState, filepath: Path, relative_filepath: Path
 ) -> tuple[dict[str, Any], str | None]:
     top_level_type = None
 
+    print(">> resolve_front_matter", SETTINGS.get("FRONT_MATTER_RESOLUTION"))
+
     if SETTINGS.get("FRONT_MATTER_RESOLUTION") == "merge":
         try:
             global_schema: dict[str, Any] = dict(SETTINGS.get("SCHEMA_DATA", {}))
-            if not global_schema.get("@context"):
-                global_schema["@context"] = SCHEMA_ORG
-            if graph := global_schema.pop("@graph", None):
-                # global_schema.remove("@graph")
-                global_graph = {"@context": SCHEMA_ORG, "graph": graph}
-            else:
-                global_graph = {}
 
             local_schema = state.env.get("front_matter", {})
             top_level_type = local_schema.get("@type", None)
-            if not local_schema.get("@context"):
-                local_schema["@context"] = SCHEMA_ORG
-            if graph := local_schema.pop("@graph", None):
-                # local_schema.remove("@graph")
-                local_graph = {"@context": SCHEMA_ORG, "graph": graph}
-            else:
-                local_graph = {}
 
             local_schema = add_inferred_schema(
                 local_schema, filepath, relative_filepath
             )
-            jsonld.set_document_loader(
-                jsonld_document_loader(
-                    fragments=[global_schema, global_graph, local_schema, local_graph]
-                )
-            )
-            front_matter: dict[str, Any] = jsonld.compact("ignore", SCHEMA_ORG)
+            front_matter = merge_schema(global_schema, local_schema)
+
         except Exception as e:
             print("merging front matter failed:", e)
             raise e
@@ -269,7 +296,7 @@ def resolve_front_matter(
 def convert_markdown_file_to_html(
     filepath: Path, relative_filepath: Path
 ) -> MarkdownFileData:
-    # CONTENT_DIR = get_content_directory()
+    print("> convert_markdown_to_html")
     if not markdown.renderer:
         raise Exception("Blurry markdown renderer not set on Mistune Markdown instance")
 
