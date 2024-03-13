@@ -222,7 +222,7 @@ def add_inferred_schema(
 
 def merge_schema(
     global_schema: dict[str, Any], local_schema: dict[str, Any]
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     # if not global_schema.get("@context"):
     #     global_schema["@context"] = SCHEMA_ORG
     if graph := global_schema.pop("@graph", None):
@@ -257,7 +257,7 @@ def merge_schema(
     jsonld.set_document_loader(
         jsonld_document_loader(fragments=[global_graph, local_schema, local_graph])
     )
-    front_matter: dict[str, Any] = jsonld.compact("ignore", SCHEMA_ORG)
+    front_matter = jsonld.compact("ignore", SCHEMA_ORG)
     print(">>. front matter:")
     print(json.dumps(front_matter, indent=2))
     return front_matter

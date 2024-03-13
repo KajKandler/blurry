@@ -22,21 +22,21 @@ repos:
         language_version: python3
         args: [--py310-plus]
 
-  # - repo: local
-  #   hooks:
-  #     - id: pyright
-  #       name: pyright
-  #       entry: pyright
-  #       language: node
-  #       pass_filenames: false
-  #       types: [python]
-  #       additional_dependencies: ["pyright@1.1.353"]
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        entry: pyright
+        language: node
+        pass_filenames: false
+        types: [python]
+        additional_dependencies: ["pyright@1.1.353"]
 
-  # - repo: local
-  #   hooks:
-  #     - id: pytest-check
-  #       name: pytest-check
-  #       entry: pytest
-  #       language: system
-  #       pass_filenames: false
-  #       always_run: true
+  - repo: local
+    hooks:
+      - id: pytest-check
+        name: pytest-check
+        entry: pytest
+        language: system
+        pass_filenames: false
+        always_run: true
