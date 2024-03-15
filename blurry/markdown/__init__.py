@@ -152,114 +152,43 @@ markdown = mistune.Markdown(
     + [plugin.load() for plugin in discovered_markdown_plugins],
 )
 
-SCHEMA_ORG = json.loads('{ "@vocab": "https://schema.org/" }')
-
-
-def jsonld_document_loader(secure=False, fragments=[], **kwargs):
-    """
-    Create a Requests document loader.
-
-    Can be used to setup extra Requests args such as verify, cert, timeout,
-    or others.
-
-    :param secure: require all requests to use HTTPS (default: False).
-    :param fragments: the fragments of schema loaded as dicts
-    :param **kwargs: extra keyword args for Requests get() call.
-
-    :return: the RemoteDocument loader function.
-    """
-
-    def loader(ignored, options={}):
-        """
-        Retrieves JSON-LD from the dicts provided as fragments.
-
-        :param ignored: this positional paramter is ignored, because the tomls fragments are side loaded
-
-        :return: the RemoteDocument.
-        """
-        fragments_str = []
-        for fragment in fragments:
-            # if not fragment.get("@context"):
-            #     fragment["@context"] = SCHEMA_ORG
-            fragments_str.append(json.dumps(fragment))
-            # print("==========================")
-            # print(json.dumps(fragment, indent=2))
-
-        result = "[" + ",".join(fragments_str) + "]"
-        print(">>>>>>>>> ", result)
-
-        doc = {
-            "contentType": "application/ld+json",
-            "contextUrl": None,
-            "documentUrl": None,
-            "document": result,
-        }
-        return doc
-
-    return loader
-
-
 def add_inferred_schema(
-    local_front_matter: dict, filepath: Path, relative_filepath: Path
+    front_matter: dict, filepath: Path, relative_filepath: Path
 ) -> dict:
-    # CONTENT_DIR = get_content_directory()
-
     # Add inferred/computed/relative values
-    local_front_matter.update({"url": content_path_to_url(relative_filepath)})
+    front_matter.update({"url": content_path_to_url(relative_filepath)})
 
     # Add inferred/computed/relative values
     # https://schema.org/image
     # https://schema.org/thumbnailUrl
-    if image := local_front_matter.get("image"):
+    if image := front_matter.get("image"):
         image_copy = deepcopy(image)
         relative_image_path = get_relative_image_path_from_image_property(image_copy)
         image_path = resolve_relative_path_in_markdown(relative_image_path, filepath)
-        local_front_matter["image"] = update_image_with_url(image_copy, image_path)
-        local_front_matter["thumbnailUrl"] = image_path_to_thumbnailUrl(image_path)
+        front_matter["image"] = update_image_with_url(image_copy, image_path)
+        front_matter["thumbnailUrl"] = image_path_to_thumbnailUrl(image_path)
 
-    return local_front_matter
+    return front_matter
+
+
+def split_schema_graph(schema: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if graph := schema.pop("@graph", None):
+        return schema, graph
+    else:
+        return schema, []
 
 
 def merge_schema(
     global_schema: dict[str, Any], local_schema: dict[str, Any]
 ) -> dict[str, Any] | None:
-    # if not global_schema.get("@context"):
-    #     global_schema["@context"] = SCHEMA_ORG
-    if graph := global_schema.pop("@graph", None):
-        print(">>- global schema:")
-        print(json.dumps(global_schema, indent=2))
-        print(">>+ global graph:")
-        print(json.dumps(graph, indent=2))
-        graph.append(deepcopy(global_schema))
-        # global_graph = {"@context": SCHEMA_ORG, "@graph": graph}
-        global_graph = {"@graph": graph}
-    else:
-        # global_graph = [{"@context": SCHEMA_ORG}, deepcopy(global_schema)]
-        global_graph = [deepcopy(global_schema)]
-    print(">>. global schema:")
-    print(json.dumps(global_schema, indent=2))
-    print(">>. global graph:")
-    print(json.dumps(global_graph, indent=2))
+    global_s, global_graph = split_schema_graph(global_schema)
 
-    # if not local_schema.get("@context"):
-    #     local_schema["@context"] = SCHEMA_ORG
-    if graph := local_schema.pop("@graph", None):
-        # local_graph = {"@context": SCHEMA_ORG, "@graph": graph}
-        # graph.append(deepcopy(local_schema))
-        local_graph = {"@graph": graph}
-    else:
-        local_graph = [deepcopy(global_schema)]
-    print(">>. local schema:")
-    print(json.dumps(local_schema, indent=2))
-    print(">>. local graph:")
-    print(json.dumps(local_graph, indent=2))
+    local_s, local_graph = split_schema_graph(local_schema)
 
-    jsonld.set_document_loader(
-        jsonld_document_loader(fragments=[global_graph, local_schema, local_graph])
-    )
-    front_matter = jsonld.compact("ignore", SCHEMA_ORG)
-    print(">>. front matter:")
-    print(json.dumps(front_matter, indent=2))
+    global_s.update(local_s)
+    merged_graph = global_graph + local_graph
+    front_matter = deepcopy(global_s)
+    front_matter["@graph"] = deepcopy(merged_graph)
     return front_matter
 
 
@@ -267,8 +196,6 @@ def resolve_front_matter(
     state: BlockState, filepath: Path, relative_filepath: Path
 ) -> tuple[dict[str, Any], str | None]:
     top_level_type = None
-
-    print(">> resolve_front_matter", SETTINGS.get("FRONT_MATTER_RESOLUTION"))
 
     if SETTINGS.get("FRONT_MATTER_RESOLUTION") == "merge":
         try:
@@ -290,13 +217,13 @@ def resolve_front_matter(
         front_matter: dict[str, Any] = dict(SETTINGS.get("SCHEMA_DATA", {}))
         front_matter.update(state.env.get("front_matter", {}))
         front_matter = add_inferred_schema(front_matter, filepath, relative_filepath)
+        top_level_type = front_matter.get("@type", None)
     return front_matter, top_level_type
 
 
 def convert_markdown_file_to_html(
     filepath: Path, relative_filepath: Path
 ) -> MarkdownFileData:
-    print("> convert_markdown_to_html")
     if not markdown.renderer:
         raise Exception("Blurry markdown renderer not set on Mistune Markdown instance")
 

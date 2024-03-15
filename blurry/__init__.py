@@ -133,6 +133,7 @@ async def write_html_file(
 
     # Include non-schema variables as top-level context values, removing them from
     # front_matter
+    ## FIXME - This needs to happen before schema is merged (as any schema lib won't deal well with exterenous keys)
     front_matter = file_data.front_matter
     schema_variables: TemplateContext = {}
     template_context: TemplateContext = {}
