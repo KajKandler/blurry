@@ -15,7 +15,6 @@ from mistune.plugins.table import table
 from mistune.plugins.task_lists import task_lists
 from mistune.plugins.url import url
 from mistune.util import escape
-from pyld import jsonld
 from wand.image import Image
 
 from .front_matter import parse_front_matter
@@ -152,6 +151,7 @@ markdown = mistune.Markdown(
     + [plugin.load() for plugin in discovered_markdown_plugins],
 )
 
+
 def add_inferred_schema(
     front_matter: dict, filepath: Path, relative_filepath: Path
 ) -> dict:
@@ -171,23 +171,30 @@ def add_inferred_schema(
     return front_matter
 
 
-def split_schema_graph(schema: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    if graph := schema.pop("@graph", None):
-        return schema, graph
-    else:
+def split_schema_graph(schema: dict[str, Any]) -> tuple[dict[str, Any], list]:
+    try:
+        if graph := schema.pop("@graph"):
+            if not isinstance(graph, list):
+                print("Warning: graph is not a list", json.dumps(graph))
+                graph = [graph]
+            return schema, graph
+        else:
+            return schema, []
+    except KeyError:
         return schema, []
 
 
 def merge_schema(
     global_schema: dict[str, Any], local_schema: dict[str, Any]
-) -> dict[str, Any] | None:
+) -> dict[str, Any]:
     global_s, global_graph = split_schema_graph(global_schema)
 
     local_s, local_graph = split_schema_graph(local_schema)
 
     global_s.update(local_s)
     merged_graph = global_graph + local_graph
-    front_matter = deepcopy(global_s)
+    front_matter = {}
+    front_matter.update(deepcopy(global_s))
     front_matter["@graph"] = deepcopy(merged_graph)
     return front_matter
 
